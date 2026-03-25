@@ -1,0 +1,169 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { getTrending, IMG_THUMB } from '../lib/tmdb'
+import FilmCard from '../components/FilmCard'
+import './Dashboard.css'
+
+const MOODS = [
+  { key: 'dark', emoji: '🖤', label: 'DARK', genres: [80, 53] },
+  { key: 'mindfuck', emoji: '🧠', label: 'MINDFUCK', genres: [878, 9648] },
+  { key: 'intense', emoji: '⚡', label: 'INTENSE', genres: [28, 53] },
+  { key: 'chill', emoji: '😌', label: 'CHILL', genres: [35, 18] },
+]
+
+export default function Dashboard({ onAddFilm }) {
+  const [stats, setStats] = useState({ total: 0, watchtime: 0, avgRating: 0, gems: 0 })
+  const [recent, setRecent] = useState([])
+  const [trending, setTrending] = useState([])
+  const [mood, setMood] = useState('dark')
+  const [topGenres, setTopGenres] = useState([])
+
+  useEffect(() => {
+    loadStats()
+    loadRecent()
+    loadTrending()
+  }, [])
+
+  const loadStats = async () => {
+    const { data } = await supabase.from('films').select('runtime, user_rating, vote_average, status')
+    if (!data) return
+    const total = data.length
+    const watchtime = Math.round(data.reduce((s, f) => s + (f.runtime || 100), 0) / 60)
+    const rated = data.filter(f => f.user_rating)
+    const avgRating = rated.length ? (rated.reduce((s, f) => s + f.user_rating, 0) / rated.length).toFixed(1) : 0
+    const gems = data.filter(f => f.vote_average && f.vote_average < 7.5 && f.user_rating >= 8).length
+    setStats({ total, watchtime, avgRating, gems })
+  }
+
+  const loadRecent = async () => {
+    const { data } = await supabase
+      .from('films')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (data) {
+      setRecent(data)
+      const genres = {}
+      data.forEach(f => (f.genres || []).forEach(g => { genres[g] = (genres[g] || 0) + 1 }))
+      const sorted = Object.entries(genres).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => g)
+      setTopGenres(sorted)
+    }
+  }
+
+  const loadTrending = async () => {
+    const data = await getTrending('all')
+    setTrending((data.results || []).slice(0, 5))
+  }
+
+  const days = Math.round(stats.watchtime / 24)
+
+  return (
+    <div className="dashboard">
+      <div className="topbar">
+        <div className="topbar-left">
+          <div className="greeting">Good evening, <span>dress420</span></div>
+          <div className="subgreeting mono">What are we watching tonight?</div>
+        </div>
+        <button className="btn-primary" onClick={onAddFilm}>+ Add Film</button>
+      </div>
+
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-label mono">FILMS LOGGED</div>
+          <div className="stat-value">{stats.total}<span> films</span></div>
+          <div className="stat-sub">Keep going</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label mono">TOTAL WATCHTIME</div>
+          <div className="stat-value">{stats.watchtime}<span> hrs</span></div>
+          <div className="stat-sub">{days} days of your life</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label mono">AVG YOUR RATING</div>
+          <div className="stat-value">{stats.avgRating || '—'}<span> /10</span></div>
+          <div className="stat-sub">{stats.avgRating >= 7 ? 'Picky taste' : 'Easy to please'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label mono">HIDDEN GEMS</div>
+          <div className="stat-value">{stats.gems}<span> found</span></div>
+          <div className="stat-sub">Underrated picks</div>
+        </div>
+      </div>
+
+      {recent.length > 0 && (
+        <>
+          <div className="section-header">
+            <div className="section-title">RECENTLY ADDED</div>
+          </div>
+          <div className="films-grid">
+            {recent.slice(0, 5).map(f => <FilmCard key={f.id} film={f} />)}
+          </div>
+        </>
+      )}
+
+      <div className="bottom-grid">
+        <div className="mood-card">
+          <div className="card-header">
+            <div className="badge">MOOD ENGINE</div>
+            <div className="card-sub">How are you feeling?</div>
+          </div>
+          <div className="mood-grid">
+            {MOODS.map(m => (
+              <button
+                key={m.key}
+                className={`mood-btn ${mood === m.key ? 'active' : ''}`}
+                onClick={() => setMood(m.key)}
+              >
+                <span className="mood-emoji">{m.emoji}</span>
+                <span className="mood-label mono">{m.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="dna-bar">
+            {Array.from({ length: 28 }, (_, i) => (
+              <div
+                key={i}
+                className="dna-col"
+                style={{
+                  height: `${20 + Math.sin(i * 0.7) * 14 + Math.random() * 8}px`,
+                  opacity: 0.3 + (i % 7) * 0.1,
+                }}
+              />
+            ))}
+          </div>
+          {topGenres.length > 0 && (
+            <div className="genre-row">
+              {topGenres.map((g, i) => (
+                <span key={g} className={`tag ${i < 3 ? 'active' : ''}`}>{g}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="trending-card">
+          <div className="card-header">
+            <div className="badge">TRENDING NOW</div>
+            <div className="card-sub">This week on TMDB</div>
+          </div>
+          <div className="trending-list">
+            {trending.map((t, i) => (
+              <div key={t.id} className="trending-item">
+                <div className="trending-rank mono">#{i + 1}</div>
+                {t.poster_path
+                  ? <img src={`${IMG_THUMB}${t.poster_path}`} alt={t.title || t.name} className="trending-thumb" />
+                  : <div className="trending-no-img">{(t.title || t.name)?.charAt(0)}</div>
+                }
+                <div className="trending-info">
+                  <div className="trending-title">{t.title || t.name}</div>
+                  <div className="trending-meta mono">
+                    {t.media_type === 'tv' ? 'Series' : 'Film'} · {t.vote_average?.toFixed(1)} TMDB
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
